@@ -134,6 +134,7 @@ func transform(servers []NameServer) []resolver {
 					NextProtos: []string{"dns"},
 				},
 				UDPSize: 4096,
+				Timeout: time.Second * 5,
 			},
 			Address: s.Addr,
 		})
