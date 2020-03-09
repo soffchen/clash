@@ -14,7 +14,7 @@ import (
 	"github.com/Dreamacro/clash/common/pool"
 )
 
-func (t *Tunnel) handleHTTP(request *adapters.HTTPAdapter, outbound net.Conn) {
+func handleHTTP(request *adapters.HTTPAdapter, outbound net.Conn) {
 	req := request.R
 	host := req.Host
 
@@ -81,27 +81,24 @@ func (t *Tunnel) handleHTTP(request *adapters.HTTPAdapter, outbound net.Conn) {
 	}
 }
 
-func (t *Tunnel) handleUDPToRemote(packet C.UDPPacket, pc net.PacketConn, addr net.Addr) {
-	if _, err := pc.WriteTo(packet.Data(), addr); err != nil {
+func handleUDPToRemote(packet C.UDPPacket, pc C.PacketConn, metadata *C.Metadata) {
+	if _, err := pc.WriteWithMetadata(packet.Data(), metadata); err != nil {
 		return
 	}
 	DefaultManager.Upload() <- int64(len(packet.Data()))
 }
 
-func (t *Tunnel) handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string, omitSrcAddr bool, timeout time.Duration) {
+func handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key string) {
 	buf := pool.BufPool.Get().([]byte)
 	defer pool.BufPool.Put(buf[:cap(buf)])
-	defer t.natTable.Delete(key)
+	defer natTable.Delete(key)
 	defer pc.Close()
 
 	for {
-		pc.SetReadDeadline(time.Now().Add(timeout))
+		pc.SetReadDeadline(time.Now().Add(udpTimeout))
 		n, from, err := pc.ReadFrom(buf)
 		if err != nil {
 			return
-		}
-		if from != nil && omitSrcAddr {
-			from = nil
 		}
 
 		n, err = packet.WriteBack(buf[:n], from)
@@ -112,7 +109,7 @@ func (t *Tunnel) handleUDPToLocal(packet C.UDPPacket, pc net.PacketConn, key str
 	}
 }
 
-func (t *Tunnel) handleSocket(request *adapters.SocketAdapter, outbound net.Conn) {
+func handleSocket(request *adapters.SocketAdapter, outbound net.Conn) {
 	relay(request, outbound)
 }
 

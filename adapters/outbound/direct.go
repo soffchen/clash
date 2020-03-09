@@ -4,6 +4,8 @@ import (
 	"context"
 	"net"
 
+	"github.com/Dreamacro/clash/component/dialer"
+	"github.com/Dreamacro/clash/component/resolver"
 	C "github.com/Dreamacro/clash/constant"
 )
 
@@ -17,7 +19,7 @@ func (d *Direct) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn,
 		address = net.JoinHostPort(metadata.DstIP.String(), metadata.DstPort)
 	}
 
-	c, err := dialContext(ctx, "tcp", address)
+	c, err := dialer.DialContext(ctx, "tcp", address)
 	if err != nil {
 		return nil, err
 	}
@@ -25,17 +27,27 @@ func (d *Direct) DialContext(ctx context.Context, metadata *C.Metadata) (C.Conn,
 	return newConn(c, d), nil
 }
 
-func (d *Direct) DialUDP(metadata *C.Metadata) (C.PacketConn, net.Addr, error) {
-	pc, err := net.ListenPacket("udp", "")
+func (d *Direct) DialUDP(metadata *C.Metadata) (C.PacketConn, error) {
+	pc, err := dialer.ListenPacket("udp", "")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
+	return newPacketConn(&directPacketConn{pc}, d), nil
+}
 
-	addr, err := resolveUDPAddr("udp", metadata.RemoteAddress())
-	if err != nil {
-		return nil, nil, err
+type directPacketConn struct {
+	net.PacketConn
+}
+
+func (dp *directPacketConn) WriteWithMetadata(p []byte, metadata *C.Metadata) (n int, err error) {
+	if !metadata.Resolved() {
+		ip, err := resolver.ResolveIP(metadata.Host)
+		if err != nil {
+			return 0, err
+		}
+		metadata.DstIP = ip
 	}
-	return newPacketConn(pc, d), addr, nil
+	return dp.WriteTo(p, metadata.UDPAddr())
 }
 
 func NewDirect() *Direct {

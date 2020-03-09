@@ -1,56 +1,30 @@
 package config
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"strings"
 
 	C "github.com/Dreamacro/clash/constant"
 	"github.com/Dreamacro/clash/log"
 )
 
 func downloadMMDB(path string) (err error) {
-	resp, err := http.Get("http://geolite.maxmind.com/download/geoip/database/GeoLite2-Country.tar.gz")
+	resp, err := http.Get("https://github.com/Dreamacro/maxmind-geoip/releases/latest/download/Country.mmdb")
 	if err != nil {
 		return
 	}
 	defer resp.Body.Close()
 
-	gr, err := gzip.NewReader(resp.Body)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return
+		return err
 	}
-	defer gr.Close()
+	defer f.Close()
+	_, err = io.Copy(f, resp.Body)
 
-	tr := tar.NewReader(gr)
-	for {
-		h, err := tr.Next()
-		if err == io.EOF {
-			break
-		} else if err != nil {
-			return err
-		}
-
-		if !strings.HasSuffix(h.Name, "GeoLite2-Country.mmdb") {
-			continue
-		}
-
-		f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		_, err = io.Copy(f, tr)
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return err
 }
 
 // Init prepare necessary files
@@ -64,15 +38,19 @@ func Init(dir string) error {
 
 	// initial config.yaml
 	if _, err := os.Stat(C.Path.Config()); os.IsNotExist(err) {
-		log.Infoln("Can't find config, create an empty file")
-		os.OpenFile(C.Path.Config(), os.O_CREATE|os.O_WRONLY, 0644)
+		log.Infoln("Can't find config, create a initial config file")
+		f, err := os.OpenFile(C.Path.Config(), os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("Can't create file %s: %s", C.Path.Config(), err.Error())
+		}
+		f.Write([]byte(`port: 7890`))
+		f.Close()
 	}
 
 	// initial mmdb
 	if _, err := os.Stat(C.Path.MMDB()); os.IsNotExist(err) {
 		log.Infoln("Can't find MMDB, start download")
-		err := downloadMMDB(C.Path.MMDB())
-		if err != nil {
+		if err := downloadMMDB(C.Path.MMDB()); err != nil {
 			return fmt.Errorf("Can't download MMDB: %s", err.Error())
 		}
 	}
